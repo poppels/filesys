@@ -8,10 +8,6 @@ import (
 	"github.com/poppels/filesys"
 )
 
-type OsFile struct {
-	file *os.File
-}
-
 type OsFileSystem struct {
 }
 
@@ -19,49 +15,14 @@ func NewOsWrapper() filesys.FileSystem {
 	return OsFileSystem{}
 }
 
-func (f *OsFile) Read(b []byte) (int, error) {
-	n, err := f.file.Read(b)
-	return n, err
-}
-
-func (f *OsFile) Write(b []byte) (int, error) {
-	n, err := f.file.Write(b)
-	return n, err
-}
-
-func (f *OsFile) Seek(offset int64, whence int) (int64, error) {
-	n, err := f.file.Seek(offset, whence)
-	return n, err
-}
-
-func (f *OsFile) Stat() (os.FileInfo, error) {
-	fi, err := f.file.Stat()
-	return fi, err
-}
-
-func (f *OsFile) Readdir(n int) ([]os.FileInfo, error) {
-	infos, err := f.file.Readdir(n)
-	return infos, err
-}
-
-func (f *OsFile) Close() error {
-	return f.file.Close()
-}
-
 func (OsFileSystem) Open(name string) (filesys.File, error) {
 	file, err := os.Open(name)
-	if err != nil {
-		return nil, err
-	}
-	return &OsFile{file}, nil
+	return file, err
 }
 
 func (OsFileSystem) Create(name string) (filesys.File, error) {
 	file, err := os.Create(name)
-	if err != nil {
-		return nil, err
-	}
-	return &OsFile{file}, nil
+	return file, err
 }
 
 func (OsFileSystem) Mkdir(name string, perm os.FileMode) error {
