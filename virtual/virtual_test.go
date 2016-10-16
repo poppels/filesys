@@ -3,6 +3,8 @@ package virtual
 import (
 	"testing"
 	"time"
+
+	"github.com/poppels/filesys/fsutil"
 )
 
 func TestMkdir(t *testing.T) {
@@ -23,7 +25,7 @@ func TestMkdir(t *testing.T) {
 	if err == nil {
 		t.Fatal("Directory created in non existing path")
 	}
-	err = fs.PutFile("/a/b/c.txt", []byte{})
+	err = fs.WriteFile("/a/b/c.txt", []byte{}, 0666)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -43,7 +45,7 @@ func TestMkdirAll(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	err = fs.PutFile("/a/b/c.txt", []byte{})
+	err = fs.WriteFile("/a/b/c.txt", []byte{}, 0666)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -53,31 +55,14 @@ func TestMkdirAll(t *testing.T) {
 	}
 }
 
-func TestPutFile(t *testing.T) {
-	fs := NewVirtualFilesys()
-	fs.PutFile("/a/b/c.txt", []byte("Hello"))
-	content, err := fs.ReadFile("/a/b/c.txt")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(content) != "Hello" {
-		t.Fatalf("Expected file content 'Hello', got '%s'", content)
-	}
-	err = fs.PutFile("/a/b/d.txt/", []byte("Bye"))
-	if err == nil {
-		t.Fatal("Error expected when creating a directory ending with /")
-	}
-}
-
 func TestReadDir(t *testing.T) {
+	folders := []string{"/a/b/c"}
+	files := map[string][]byte{
+		"/a/b/f.txt": []byte("Hello"),
+		"/a/b/Z.txt": []byte("Bye")}
+
 	fs := NewVirtualFilesys()
-	if err := fs.MkdirAll("/a/b/c", 0777); err != nil {
-		t.Fatal(err)
-	}
-	if err := fs.PutFile("/a/b/f.txt", []byte("Hello")); err != nil {
-		t.Fatal(err)
-	}
-	if err := fs.PutFile("/a/b/Z.txt", []byte("Bye")); err != nil {
+	if err := fsutil.CreateStructure(fs, files, folders); err != nil {
 		t.Fatal(err)
 	}
 
@@ -100,39 +85,51 @@ func TestReadDir(t *testing.T) {
 }
 
 func TestRename(t *testing.T) {
+	folders := []string{"/a/b/c", "/a/d"}
+	files := map[string][]byte{
+		"/a/b/f.txt": []byte("Hello"),
+		"/a/b/Z.txt": []byte("Bye"),
+		"/a/k/f.txt": []byte("Yo"),
+		"/a/k/h.txt": []byte("Hey")}
+
 	fs := NewVirtualFilesys()
-	if err := fs.MkdirAll("/a/b/c", 0777); err != nil {
+	if err := fsutil.CreateStructure(fs, files, folders); err != nil {
 		t.Fatal(err)
 	}
-	if err := fs.MkdirAll("/a/d", 0777); err != nil {
-		t.Fatal(err)
-	}
+
+	// Move directory with content
 	if err := fs.Rename("/a/b", "/a/d/e"); err != nil {
 		t.Fatal(err)
 	}
-	fi, err := fs.Stat("/a/d/e/c")
+
+	fi, err := fs.Stat("/a/d/e")
 	if err != nil {
 		t.Fatal(err)
+	} else if fi.Name() != "e" {
+		t.Fatalf("Expected folder name 'e', got '%s'", fi.Name())
+	} else if _, err := fs.Stat("/a/b"); err == nil {
+		t.Fatal("Folder /a/b should not exist anymore")
 	}
-	if fi.Name() != "c" {
-		t.Fatalf("Expected folder name 'c', got '%s'", fi.Name())
-	}
-	if _, err := fs.Stat("/a/b/c"); err == nil {
-		t.Fatal("Folder /a/b/c should not exist anymore")
-	}
-	if err := fs.PutFile("/a/k/f.txt", []byte("Yo")); err != nil {
+
+	infos, err := fs.ReadDir("/a/d/e")
+	if err != nil {
 		t.Fatal(err)
+	} else if len(infos) != 3 {
+		t.Fatal("Expected /a/d/e to contain 3 children, got %d", len(infos))
 	}
+
+	// Move file
 	if err := fs.Rename("/a/k/f.txt", "/a/d/e/g.txt"); err != nil {
 		t.Fatal(err)
 	}
 	fi, err = fs.Stat("/a/d/e/g.txt")
 	if err != nil {
 		t.Fatal(err)
-	}
-	if fi.Name() != "g.txt" {
+	} else if fi.Name() != "g.txt" {
 		t.Fatalf("Expected file name 'g.txt', got %s", fi.Name())
 	}
+
+	// Test forbidden overwrites
 	if err := fs.Rename("/a/d/e/g.txt", "/a/d/e/c"); err == nil {
 		t.Fatal("Should not be able to overwrite folder with file")
 	}
@@ -142,30 +139,28 @@ func TestRename(t *testing.T) {
 	if err := fs.Rename("/a/k", "/a/d/e/g.txt"); err == nil {
 		t.Fatal("Should not be able to overwrite file with folder")
 	}
-	err = fs.PutFile("/a/k/h.txt", []byte("Hey"))
-	if err != nil {
-		t.Fatal(err)
-	}
+
+	// Overwrite file
 	if err := fs.Rename("/a/k/h.txt", "/a/d/e/g.txt"); err != nil {
 		t.Fatal(err)
 	}
 	fi, err = fs.Stat("/a/d/e/g.txt")
 	if err != nil {
 		t.Fatal(err)
-	}
-	if fi.Name() != "g.txt" {
+	} else if fi.Name() != "g.txt" {
 		t.Fatalf("Expected file name 'g.txt', got '%s'", fi.Name())
 	}
-	content, err := fs.ReadFile("/a/d/e/g.txt")
+	err = fsutil.VerifyFileContent(fs, "/a/d/e/g.txt", []byte("Hey"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(content) != "Hey" {
-		t.Fatalf("Expected file content 'Hey', got '%s'", content)
-	}
+
+	// Move to non existing path
 	if err := fs.Rename("/a/k", "/a/j/o"); err == nil {
 		t.Fatal("Expected os.ErrNotExist")
 	}
+
+	// Moving directory into itself or one of its subfolders
 	if err := fs.Rename("/a/d", "/a/d/d"); err == nil {
 		t.Fatal("Should not be able to move folder into itself")
 	}
@@ -176,7 +171,7 @@ func TestRename(t *testing.T) {
 
 func TestChtimes(t *testing.T) {
 	fs := NewVirtualFilesys()
-	fs.PutFile("/a/b/c.txt", []byte("Hello"))
+	fsutil.PutFile(fs, "/a/b/c.txt", []byte("Hello"))
 	mtime := time.Now().Add(-10 * time.Hour)
 	err := fs.Chtimes("/a/b/c.txt", time.Now(), mtime)
 	if err != nil {

@@ -2,7 +2,7 @@
 
 This library enables unit testing of your application's file system operations without actually writing any changes to disk.
 
-It wraps the most common operations from the __os__ package.
+It wraps the most common operations from the __os__ package and some from __ioutil__.
 
 ### Usage
 Create a FileSystem object that is passed around in you functions instead of using the __os__ methods directly

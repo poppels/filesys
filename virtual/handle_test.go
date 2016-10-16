@@ -4,11 +4,13 @@ import (
 	"io"
 	"io/ioutil"
 	"testing"
+
+	"github.com/poppels/filesys/fsutil"
 )
 
 func TestRead(t *testing.T) {
 	fs := NewVirtualFilesys()
-	fs.PutFile("/a/b/c.txt", []byte("Hello"))
+	fsutil.PutFile(fs, "/a/b/c.txt", []byte("Hello"))
 	f, err := fs.Open("/a/b/c.txt")
 	if err != nil {
 		t.Fatal(err)
@@ -23,42 +25,65 @@ func TestRead(t *testing.T) {
 	}
 }
 
-func TestWrite(t *testing.T) {
+func TestCreate(t *testing.T) {
 	fs := NewVirtualFilesys()
+
 	err := fs.MkdirAll("/a/b", 0777)
 	if err != nil {
 		t.Fatal(err)
 	}
+
+	f, err := fs.Create("/a/b/c.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.Close()
+
+	if _, err := fs.Stat("/a/b/c.txt"); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestWrite(t *testing.T) {
+	fs := NewVirtualFilesys()
+
+	err := fs.MkdirAll("/a/b", 0777)
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	f, err := fs.Create("/a/b/c.txt")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer f.Close()
-	_, err = f.Write([]byte("Hello"))
+
+	content := []byte("Hello")
+	_, err = f.Write(content)
 	if err != nil {
 		t.Fatal(err)
 	}
-	content, err := fs.ReadFile("/a/b/c.txt")
+
+	err = fsutil.VerifyFileContent(fs, "/a/b/c.txt", content)
 	if err != nil {
 		t.Fatal(err)
-	}
-	expected := "Hello"
-	if string(content) != expected {
-		t.Fatalf("Expected file content '%s', got '%s'", expected, content)
 	}
 }
 
 func TestSeek(t *testing.T) {
 	fs := NewVirtualFilesys()
+
 	err := fs.MkdirAll("/a/b", 0777)
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	f, err := fs.Create("/a/b/c.txt")
 	if err != nil {
 		t.Fatalf("Error creating file: %s", err.Error())
 	}
 	defer f.Close()
+
 	if _, err = f.Write([]byte("Hello")); err != nil {
 		t.Fatal(err)
 	}
@@ -71,16 +96,14 @@ func TestSeek(t *testing.T) {
 	if pos != 1 {
 		t.Fatalf("Expected position 1, got %d", pos)
 	}
+
 	if _, err = f.Write([]byte("ipp")); err != nil {
 		t.Fatal(err)
 	}
-	content, err := fs.ReadFile("/a/b/c.txt")
+
+	err = fsutil.VerifyFileContent(fs, "/a/b/c.txt", []byte("Hippo"))
 	if err != nil {
 		t.Fatal(err)
-	}
-	expected := "Hippo"
-	if string(content) != "Hippo" {
-		t.Fatalf("Expected '%s', got '%s'", expected, content)
 	}
 
 	// Seek from current position
@@ -90,15 +113,14 @@ func TestSeek(t *testing.T) {
 	if pos != 2 {
 		t.Fatalf("Expected position 2, got %d", pos)
 	}
+
 	if _, err = f.Write([]byte("ng")); err != nil {
 		t.Fatal(err)
 	}
-	if content, err = fs.ReadFile("/a/b/c.txt"); err != nil {
+
+	err = fsutil.VerifyFileContent(fs, "/a/b/c.txt", []byte("Hingo"))
+	if err != nil {
 		t.Fatal(err)
-	}
-	expected = "Hingo"
-	if string(content) != expected {
-		t.Fatalf("Expected '%s', got '%s'", expected, content)
 	}
 
 	// Seek from end
@@ -108,27 +130,25 @@ func TestSeek(t *testing.T) {
 	if pos != 8 {
 		t.Fatalf("Expected position 8, got %d", pos)
 	}
+
 	if _, err = f.Write([]byte("Hey")); err != nil {
 		t.Fatal(err)
 	}
-	if content, err = fs.ReadFile("/a/b/c.txt"); err != nil {
+
+	err = fsutil.VerifyFileContent(fs, "/a/b/c.txt", []byte("Hingo\x00\x00\x00Hey"))
+	if err != nil {
 		t.Fatal(err)
-	}
-	expected = "Hingo\x00\x00\x00Hey"
-	if string(content) != expected {
-		t.Fatalf("Expected '%s', got '%s'", expected, content)
 	}
 }
 
 func TestFolderReaddir(t *testing.T) {
+	folders := []string{"/a/b/c"}
+	files := map[string][]byte{
+		"/a/b/f.txt": []byte("Hello"),
+		"/a/b/Z.txt": []byte("Bye")}
+
 	fs := NewVirtualFilesys()
-	if err := fs.MkdirAll("/a/b/c", 0777); err != nil {
-		t.Fatal(err)
-	}
-	if err := fs.PutFile("/a/b/f.txt", []byte("Hello")); err != nil {
-		t.Fatal(err)
-	}
-	if err := fs.PutFile("/a/b/Z.txt", []byte("Bye")); err != nil {
+	if err := fsutil.CreateStructure(fs, files, folders); err != nil {
 		t.Fatal(err)
 	}
 

@@ -3,6 +3,7 @@ package main
 import (
 	"testing"
 
+	"github.com/poppels/filesys/fsutil"
 	"github.com/poppels/filesys/virtual"
 )
 
@@ -25,28 +26,17 @@ const testXML = `<wordList>
 </wordList>`
 
 func TestConvertJsonToXml(t *testing.T) {
+	files := map[string][]byte{"/a/json/sillywords.json": []byte(testJSON)}
+	folders := []string{"/a/xml", "/a/workingdir"}
+
 	fs := virtual.NewVirtualFilesys()
-
-	// PutFile is a convenience method that also creating intermediate directories
-	err := fs.PutFile("/a/json/sillywords.json", []byte(testJSON))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Note: MkdirAll ignores the permission flag in the virtual file system
-	err = fs.MkdirAll("/a/xml", 0777)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	err = fs.MkdirAll("/a/workingdir", 0777)
-	if err != nil {
+	if err := fsutil.CreateStructure(fs, files, folders); err != nil {
 		t.Fatal(err)
 	}
 
 	// This returns a pointer to the same file system,
 	// but with the working directory changed
-	fs, err = fs.ChangeDir("/a/workingdir")
+	fs, err := fs.ChangeDir("/a/workingdir")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -57,12 +47,9 @@ func TestConvertJsonToXml(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Check that the file content is what we expect it to be
-	content, err := fs.ReadFile("/a/xml/sillywords.xml")
+	// Verify that the file content is what we expect it to be
+	err = fsutil.VerifyFileContent(fs, "/a/xml/sillywords.xml", []byte(testXML))
 	if err != nil {
 		t.Fatal(err)
-	}
-	if string(content) != testXML {
-		t.Fatal("Expected xml does not match actual xml")
 	}
 }

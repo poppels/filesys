@@ -332,21 +332,6 @@ func (fs *VirtualFileSystem) CurrentDir() string {
 	return string(path)
 }
 
-// PutFile is like WriteFile but it also creates all missing directories
-func (fs *VirtualFileSystem) PutFile(name string, content []byte) error {
-	if fs == nil {
-		return &os.PathError{"putfile", name, os.ErrInvalid}
-	}
-
-	f, err := fs.createFile(name, true)
-	if err != nil {
-		return &os.PathError{"putfile", name, err}
-	}
-
-	f.data = content
-	return nil
-}
-
 func (fs *VirtualFileSystem) createFile(name string, createMissing bool) (*virtualFile, error) {
 	if strings.HasSuffix(name, "/") {
 		return nil, errInvalidDestination
