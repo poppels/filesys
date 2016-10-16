@@ -18,9 +18,6 @@ type VirtualFileHandle struct {
 }
 
 func (fh *VirtualFileHandle) Read(b []byte) (int, error) {
-	if fh == nil {
-		return 0, &os.PathError{"read", fh.file.name, os.ErrInvalid}
-	}
 	if fh.closed {
 		return 0, &os.PathError{"read", fh.file.name, errClosed}
 	}
@@ -43,9 +40,6 @@ func (fh *VirtualFileHandle) Read(b []byte) (int, error) {
 }
 
 func (fh *VirtualFileHandle) Write(b []byte) (int, error) {
-	if fh == nil {
-		return 0, &os.PathError{"write", fh.file.name, os.ErrInvalid}
-	}
 	if fh.closed {
 		return 0, &os.PathError{"write", fh.file.name, errClosed}
 	}
@@ -80,9 +74,6 @@ func (fh *VirtualFileHandle) Write(b []byte) (int, error) {
 }
 
 func (fh *VirtualFileHandle) Seek(offset int64, whence int) (int64, error) {
-	if fh == nil {
-		return 0, &os.PathError{"seek", fh.file.name, os.ErrInvalid}
-	}
 	if fh.closed {
 		return 0, &os.PathError{"seek", fh.file.name, errClosed}
 	}
@@ -94,11 +85,11 @@ func (fh *VirtualFileHandle) Seek(offset int64, whence int) (int64, error) {
 	}
 
 	var pos int64
-	if whence == 0 {
+	if whence == io.SeekStart {
 		pos = offset
-	} else if whence == 1 {
+	} else if whence == io.SeekCurrent {
 		pos = int64(fh.position) + offset
-	} else if whence == 2 {
+	} else if whence == io.SeekEnd {
 		pos = int64(len(fh.file.data)) + offset
 	}
 
@@ -114,9 +105,6 @@ func (fh *VirtualFileHandle) Seek(offset int64, whence int) (int64, error) {
 }
 
 func (fh *VirtualFileHandle) Stat() (os.FileInfo, error) {
-	if fh == nil {
-		return nil, &os.PathError{"stat", fh.file.name, os.ErrInvalid}
-	}
 	if fh.closed {
 		return nil, &os.PathError{"stat", fh.file.name, errClosed}
 	}
@@ -127,9 +115,6 @@ func (fh *VirtualFileHandle) Stat() (os.FileInfo, error) {
 }
 
 func (fh *VirtualFileHandle) Readdir(n int) ([]os.FileInfo, error) {
-	if fh == nil {
-		return nil, &os.PathError{"read", fh.file.name, os.ErrInvalid}
-	}
 	if fh.closed {
 		return nil, &os.PathError{"read", fh.file.name, errClosed}
 	}
@@ -156,14 +141,9 @@ func (fh *VirtualFileHandle) Readdir(n int) ([]os.FileInfo, error) {
 }
 
 func (fh *VirtualFileHandle) Close() error {
-	if fh == nil {
-		return &os.PathError{"close", fh.file.name, os.ErrInvalid}
-	}
-
 	if !fh.isDir && fh.modified {
 		fh.file.modTime = time.Now()
 	}
-
 	fh.closed = true
 	return nil
 }

@@ -33,33 +33,22 @@ func NewVirtualFilesys() *VirtualFileSystem {
 }
 
 func (fs *VirtualFileSystem) Mkdir(name string, perm os.FileMode) error {
-	if fs == nil {
-		return &os.PathError{"mkdir", name, os.ErrInvalid}
-	}
-
 	dir, filename := path.Split(path.Clean(name))
 	if filename == "" { // Only happens when path is '/'
 		return nil
 	}
-
 	parent, err := fs.getFolder(dir, false)
 	if err != nil {
 		return &os.PathError{"mkdir", name, err}
 	}
-
 	if _, isFile := parent.files[filename]; isFile {
 		return errNotDirectory
 	}
-
 	parent.folders[filename] = makeFolder(filename, parent)
 	return nil
 }
 
 func (fs *VirtualFileSystem) MkdirAll(name string, perm os.FileMode) error {
-	if fs == nil {
-		return &os.PathError{"mkdir", name, os.ErrInvalid}
-	}
-
 	_, err := fs.getFolder(name, true)
 	if err != nil {
 		return &os.PathError{"mkdir", name, err}
@@ -68,35 +57,22 @@ func (fs *VirtualFileSystem) MkdirAll(name string, perm os.FileMode) error {
 }
 
 func (fs *VirtualFileSystem) Remove(name string) error {
-	if fs == nil {
-		return &os.PathError{"remove", name, os.ErrInvalid}
-	}
-
 	err := fs.removePath(name, false)
 	if err != nil {
 		return &os.PathError{"remove", name, err}
 	}
-
 	return nil
 }
 
 func (fs *VirtualFileSystem) RemoveAll(name string) error {
-	if fs == nil {
-		return &os.PathError{"remove", name, os.ErrInvalid}
-	}
-
 	err := fs.removePath(name, true)
 	if err != nil {
 		return &os.PathError{"remove", name, err}
 	}
-
 	return nil
 }
 
 func (fs *VirtualFileSystem) Rename(oldPath, newPath string) error {
-	if fs == nil {
-		return &os.LinkError{"rename", oldPath, newPath, os.ErrInvalid}
-	}
 	if oldPath == "" || newPath == "" {
 		return &os.LinkError{"rename", oldPath, newPath, os.ErrNotExist}
 	}
@@ -161,9 +137,6 @@ func (fs *VirtualFileSystem) Rename(oldPath, newPath string) error {
 }
 
 func (fs *VirtualFileSystem) Stat(name string) (os.FileInfo, error) {
-	if fs == nil {
-		return nil, &os.PathError{"stat", name, os.ErrInvalid}
-	}
 	if name == "" {
 		return nil, &os.PathError{"stat", name, os.ErrNotExist}
 	}
@@ -191,9 +164,6 @@ func (fs *VirtualFileSystem) Stat(name string) (os.FileInfo, error) {
 }
 
 func (fs *VirtualFileSystem) Open(name string) (filesys.File, error) {
-	if fs == nil {
-		return nil, &os.PathError{"open", name, os.ErrInvalid}
-	}
 	if name == "" {
 		return nil, &os.PathError{"open", name, os.ErrNotExist}
 	}
@@ -220,23 +190,14 @@ func (fs *VirtualFileSystem) Open(name string) (filesys.File, error) {
 }
 
 func (fs *VirtualFileSystem) Create(name string) (filesys.File, error) {
-	if fs == nil {
-		return nil, &os.PathError{"create", name, os.ErrInvalid}
-	}
-
 	f, err := fs.createFile(name, false)
 	if err != nil {
 		return nil, &os.PathError{"create", name, err}
 	}
-
 	return f.open(os.O_RDWR), nil
 }
 
 func (fs *VirtualFileSystem) Chtimes(name string, atime, mtime time.Time) error {
-	if fs == nil {
-		return &os.PathError{"chtimes", name, os.ErrInvalid}
-	}
-
 	f, err := fs.getFile(name)
 	if err != nil && !os.IsNotExist(err) {
 		return &os.PathError{"chtimes", name, err}
@@ -257,10 +218,6 @@ func (fs *VirtualFileSystem) Chtimes(name string, atime, mtime time.Time) error 
 }
 
 func (fs *VirtualFileSystem) ReadDir(name string) ([]os.FileInfo, error) {
-	if fs == nil {
-		return nil, &os.PathError{"readdir", name, os.ErrInvalid}
-	}
-
 	folder, err := fs.getFolder(name, false)
 	if err != nil {
 		return nil, &os.PathError{"readdir", name, err}
@@ -270,10 +227,6 @@ func (fs *VirtualFileSystem) ReadDir(name string) ([]os.FileInfo, error) {
 }
 
 func (fs *VirtualFileSystem) ReadFile(name string) ([]byte, error) {
-	if fs == nil {
-		return nil, &os.PathError{"readfile", name, os.ErrInvalid}
-	}
-
 	f, err := fs.getFile(name)
 	if err != nil {
 		return nil, &os.PathError{"readfile", name, err}
@@ -283,29 +236,19 @@ func (fs *VirtualFileSystem) ReadFile(name string) ([]byte, error) {
 }
 
 func (fs *VirtualFileSystem) WriteFile(name string, data []byte, perm os.FileMode) error {
-	if fs == nil {
-		return &os.PathError{"writefile", name, os.ErrInvalid}
-	}
-
 	f, err := fs.createFile(name, false)
 	if err != nil {
 		return &os.PathError{"writefile", name, err}
 	}
-
 	f.data = data
 	return nil
 }
 
 func (fs *VirtualFileSystem) ChangeDir(name string) (*VirtualFileSystem, error) {
-	if fs == nil {
-		return nil, &os.PathError{"cd", name, os.ErrInvalid}
-	}
-
 	f, err := fs.getFolder(name, false)
 	if err != nil {
 		return nil, &os.PathError{"cd", name, err}
 	}
-
 	return &VirtualFileSystem{root: fs.root, currentDir: f}, nil
 }
 
