@@ -29,4 +29,4 @@ Create a virtual file system to use in tests _(error handling omitted in example
 	convertJSONToXML("/a/sillywords.json", "/a/sillywords.xml", fs)
 ```
 
-For a full example, see [example](https://github.com/poppels/filesys/tree/master/example)
+For a small example, see [example](https://github.com/poppels/filesys/tree/master/example)
