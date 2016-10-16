@@ -1,2 +1,1 @@
-# gofilesys
-Go File System Abstraction
+# Go File System Abstraction
