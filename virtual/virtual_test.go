@@ -204,6 +204,60 @@ func TestCurrentDir(t *testing.T) {
 	}
 }
 
+func TestRelativePaths(t *testing.T) {
+	folders := []string{"/a/b/c"}
+	files := map[string][]byte{"/a/b/f.txt": []byte("Hello")}
+	fs := NewVirtualFilesys()
+	err := fsutil.CreateStructure(fs, files, folders)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fs.Stat("a/b/c"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fs.Stat("a/b/f.txt"); err != nil {
+		t.Fatal(err)
+	}
+	// This actually works in the os package
+	if _, err := fs.Stat("a/b/fake/../f.txt"); err != nil {
+		t.Fatal(err)
+	}
+	fi, err := fs.Stat("a/b/..")
+	if err != nil {
+		t.Fatal(err)
+	} else if fi.Name() != "a" {
+		t.Fatal("Unexpected file info")
+	}
+	fi, err = fs.Stat("a/b/.")
+	if err != nil {
+		t.Fatal(err)
+	} else if fi.Name() != "b" {
+		t.Fatal("Unexpected file info")
+	}
+
+	fs, err = fs.ChangeDir("a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fs.Stat("b/c"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fs.Stat("b/f.txt"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fs.Stat("/a/b/f.txt"); err != nil {
+		t.Fatal(err)
+	}
+
+	fs, err = fs.ChangeDir("b/c")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fs.Stat("../f.txt"); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func BenchmarkCurrentDir(b *testing.B) {
 	fs := NewVirtualFilesys()
 	err := fs.MkdirAll("/abra/kadabra/sim/salabim/€ß", 0777)

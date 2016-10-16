@@ -7,9 +7,7 @@ import (
 )
 
 type VirtualFileHandle struct {
-	file     *virtualFile
-	folder   *virtualFolder
-	isDir    bool
+	res      *resource
 	position int
 	canRead  bool
 	canWrite bool
@@ -19,53 +17,53 @@ type VirtualFileHandle struct {
 
 func (fh *VirtualFileHandle) Read(b []byte) (int, error) {
 	if fh.closed {
-		return 0, &os.PathError{"read", fh.file.name, errClosed}
+		return 0, &os.PathError{"read", fh.res.name, errClosed}
 	}
-	if fh.isDir {
-		return 0, &os.PathError{"read", fh.file.name, errIsDirectory}
+	if fh.res.isDir {
+		return 0, &os.PathError{"read", fh.res.name, errIsDirectory}
 	}
 	if !fh.canRead {
-		return 0, &os.PathError{"read", fh.file.name, errNotReadable}
+		return 0, &os.PathError{"read", fh.res.name, errNotReadable}
 	}
 	if len(b) == 0 {
 		return 0, nil
 	}
-	if fh.position >= len(fh.file.data) {
+	if fh.position >= len(fh.res.data) {
 		return 0, io.EOF
 	}
 
-	n := copy(b, fh.file.data[fh.position:])
+	n := copy(b, fh.res.data[fh.position:])
 	fh.position += n
 	return n, nil
 }
 
 func (fh *VirtualFileHandle) Write(b []byte) (int, error) {
 	if fh.closed {
-		return 0, &os.PathError{"write", fh.file.name, errClosed}
+		return 0, &os.PathError{"write", fh.res.name, errClosed}
 	}
-	if fh.isDir {
-		return 0, &os.PathError{"write", fh.file.name, errIsDirectory}
+	if fh.res.isDir {
+		return 0, &os.PathError{"write", fh.res.name, errIsDirectory}
 	}
 	if !fh.canWrite {
-		return 0, &os.PathError{"write", fh.file.name, errNotWritable}
+		return 0, &os.PathError{"write", fh.res.name, errNotWritable}
 	}
 	if len(b) == 0 {
 		return 0, nil
 	}
 
 	// If position is after EOF, the gap should be filled with null bytes
-	lenFile := len(fh.file.data)
+	lenFile := len(fh.res.data)
 	if fh.position > lenFile {
 		filler := make([]byte, fh.position-lenFile)
-		fh.file.data = append(fh.file.data, filler...)
+		fh.res.data = append(fh.res.data, filler...)
 		lenFile = fh.position
 	}
 
 	end := fh.position + len(b)
 	if end < lenFile {
-		copy(fh.file.data[fh.position:end], b)
+		copy(fh.res.data[fh.position:end], b)
 	} else {
-		fh.file.data = append(fh.file.data[:fh.position], b...)
+		fh.res.data = append(fh.res.data[:fh.position], b...)
 	}
 
 	fh.position = end
@@ -75,12 +73,12 @@ func (fh *VirtualFileHandle) Write(b []byte) (int, error) {
 
 func (fh *VirtualFileHandle) Seek(offset int64, whence int) (int64, error) {
 	if fh.closed {
-		return 0, &os.PathError{"seek", fh.file.name, errClosed}
+		return 0, &os.PathError{"seek", fh.res.name, errClosed}
 	}
-	if fh.isDir {
-		return 0, &os.PathError{"seek", fh.file.name, errIsDirectory}
+	if fh.res.isDir {
+		return 0, &os.PathError{"seek", fh.res.name, errIsDirectory}
 	}
-	if fh == nil || whence < 0 || whence > 2 {
+	if whence < 0 || whence > 2 {
 		return 0, os.ErrInvalid
 	}
 
@@ -90,14 +88,14 @@ func (fh *VirtualFileHandle) Seek(offset int64, whence int) (int64, error) {
 	} else if whence == io.SeekCurrent {
 		pos = int64(fh.position) + offset
 	} else if whence == io.SeekEnd {
-		pos = int64(len(fh.file.data)) + offset
+		pos = int64(len(fh.res.data)) + offset
 	}
 
 	if pos < 0 {
-		return 0, &os.PathError{"seek", fh.file.name, errNegativeSeek}
+		return 0, &os.PathError{"seek", fh.res.name, errNegativeSeek}
 	}
 	if int64(int(pos)) != pos {
-		return 0, &os.PathError{"seek", fh.file.name, errSeekOverflow}
+		return 0, &os.PathError{"seek", fh.res.name, errSeekOverflow}
 	}
 
 	fh.position = int(pos)
@@ -106,23 +104,20 @@ func (fh *VirtualFileHandle) Seek(offset int64, whence int) (int64, error) {
 
 func (fh *VirtualFileHandle) Stat() (os.FileInfo, error) {
 	if fh.closed {
-		return nil, &os.PathError{"stat", fh.file.name, errClosed}
+		return nil, &os.PathError{"stat", fh.res.name, errClosed}
 	}
-	if fh.isDir {
-		return fh.folder.stat(), nil
-	}
-	return fh.file.stat(), nil
+	return fh.res.stat(), nil
 }
 
 func (fh *VirtualFileHandle) Readdir(n int) ([]os.FileInfo, error) {
 	if fh.closed {
-		return nil, &os.PathError{"read", fh.file.name, errClosed}
+		return nil, &os.PathError{"read", fh.res.name, errClosed}
 	}
-	if !fh.isDir {
-		return nil, &os.PathError{"read", fh.file.name, errNotDirectory}
+	if !fh.res.isDir {
+		return nil, &os.PathError{"read", fh.res.name, errNotDirectory}
 	}
 
-	infos := fh.folder.readdir()
+	infos := fh.res.readdir()
 	var err error
 	if n <= 0 {
 		infos = infos[fh.position:]
@@ -141,8 +136,8 @@ func (fh *VirtualFileHandle) Readdir(n int) ([]os.FileInfo, error) {
 }
 
 func (fh *VirtualFileHandle) Close() error {
-	if !fh.isDir && fh.modified {
-		fh.file.modTime = time.Now()
+	if !fh.res.isDir && fh.modified {
+		fh.res.modTime = time.Now()
 	}
 	fh.closed = true
 	return nil

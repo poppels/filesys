@@ -24,8 +24,8 @@ var (
 )
 
 type VirtualFileSystem struct {
-	root       *virtualFolder
-	currentDir *virtualFolder
+	root       *resource
+	currentDir *resource
 }
 
 func NewVirtualFilesys() *VirtualFileSystem {
@@ -35,17 +35,17 @@ func NewVirtualFilesys() *VirtualFileSystem {
 
 func (fs *VirtualFileSystem) Mkdir(name string, perm os.FileMode) error {
 	dir, filename := path.Split(path.Clean(name))
-	if filename == "" { // Only happens when path is '/'
+	if filename == "" || filename == "." {
 		return nil
 	}
 	parent, err := fs.getFolder(dir, false)
 	if err != nil {
 		return &os.PathError{"mkdir", name, err}
 	}
-	if _, isFile := parent.files[filename]; isFile {
+	if c, exists := parent.children[filename]; exists && !c.isDir {
 		return errNotDirectory
 	}
-	parent.folders[filename] = makeFolder(filename, parent)
+	parent.children[filename] = makeFolder(filename, parent)
 	return nil
 }
 
@@ -75,7 +75,12 @@ func (fs *VirtualFileSystem) RemoveAll(name string) error {
 
 func (fs *VirtualFileSystem) Rename(oldPath, newPath string) error {
 	if oldPath == "" || newPath == "" {
-		return &os.LinkError{"rename", oldPath, newPath, os.ErrNotExist}
+		return &os.LinkError{"rename", oldPath, newPath, errInvalidPath}
+	}
+
+	sourceResource, err := fs.getResource(oldPath)
+	if err != nil {
+		return &os.LinkError{"rename", oldPath, newPath, err}
 	}
 
 	source := path.Clean(oldPath)
@@ -83,79 +88,50 @@ func (fs *VirtualFileSystem) Rename(oldPath, newPath string) error {
 	if source == target {
 		return nil
 	}
-	if source == "/" || target == "/" {
+	if sourceResource == fs.root || target == "/" {
 		return &os.LinkError{"rename", oldPath, newPath, os.ErrPermission}
 	}
-
-	sourceDir, sourceName := path.Split(source)
-	targetDir, targetName := path.Split(target)
-
-	sourceParent, err := fs.getFolder(sourceDir, false)
-	if err != nil {
-		return &os.LinkError{"rename", oldPath, newPath, err}
+	// Cannot move folder into itself or one of its descendants
+	if strings.HasPrefix(target, source+"/") {
+		return &os.LinkError{"rename", oldPath, newPath, errInvalidDestination}
 	}
+
+	targetDir, targetName := path.Split(target)
 
 	targetParent, err := fs.getFolder(targetDir, false)
 	if err != nil {
 		return &os.LinkError{"rename", oldPath, newPath, err}
 	}
 
-	sourceFolder, found := sourceParent.folders[sourceName]
-	var sourceFile *virtualFile
-	if !found {
-		sourceFile, found = sourceParent.files[sourceName]
-		if !found {
-			return &os.LinkError{"rename", oldPath, newPath, os.ErrNotExist}
-		}
-	}
-
 	// Cannot overwrite folder neither with file nor folder
-	if _, found = targetParent.folders[targetName]; found {
+	if c, found := targetParent.children[targetName]; found && (sourceResource.isDir || c.isDir) {
 		return &os.LinkError{"rename", oldPath, newPath, os.ErrExist}
 	}
 
-	// Cannot overwrite a file with a folder
-	if _, found = targetParent.files[targetName]; found && sourceFolder != nil {
-		return &os.LinkError{"rename", oldPath, newPath, os.ErrExist}
-	}
-
-	if sourceFolder != nil {
-		// Cannot move folder into itself or one of its descendants
-		if strings.HasPrefix(target, source+"/") {
-			return &os.LinkError{"rename", oldPath, newPath, errInvalidDestination}
-		}
-
-		delete(sourceParent.folders, sourceName)
-		sourceFolder.name = targetName
-		targetParent.folders[targetName] = sourceFolder
-	} else {
-		delete(sourceParent.files, sourceName)
-		sourceFile.name = targetName
-		targetParent.files[targetName] = sourceFile
-	}
-
+	delete(sourceResource.parent.children, sourceResource.name)
+	sourceResource.name = targetName
+	targetParent.children[targetName] = sourceResource
 	return nil
 }
 
 func (fs *VirtualFileSystem) Stat(name string) (os.FileInfo, error) {
-	f, err := fs.open(name)
+	r, err := fs.getResource(name)
 	if err != nil {
 		return nil, &os.PathError{"stat", name, err}
 	}
-	fi, err := f.Stat()
-	return fi, nil
+	return r.stat(), nil
 }
 
 func (fs *VirtualFileSystem) Open(name string) (filesys.File, error) {
-	f, err := fs.open(name)
+	r, err := fs.getResource(name)
 	if err != nil {
 		return nil, &os.PathError{"open", name, err}
 	}
-	return f, nil
+	return r.open(os.O_RDONLY), nil
 }
 
 func (fs *VirtualFileSystem) Create(name string) (filesys.File, error) {
-	f, err := fs.createFile(name, false)
+	f, err := fs.createFile(name)
 	if err != nil {
 		return nil, &os.PathError{"create", name, err}
 	}
@@ -163,53 +139,52 @@ func (fs *VirtualFileSystem) Create(name string) (filesys.File, error) {
 }
 
 func (fs *VirtualFileSystem) Chtimes(name string, atime, mtime time.Time) error {
-	f, err := fs.getFile(name)
-	if err != nil && !os.IsNotExist(err) {
-		return &os.PathError{"chtimes", name, err}
-	}
-
-	if f != nil {
-		f.modTime = mtime
-		return nil
-	}
-
-	folder, err := fs.getFolder(name, false)
+	r, err := fs.getResource(name)
 	if err != nil {
 		return &os.PathError{"chtimes", name, err}
 	}
-
-	folder.modTime = mtime
+	r.modTime = mtime
 	return nil
 }
 
 func (fs *VirtualFileSystem) ReadDir(name string) ([]os.FileInfo, error) {
+	if name == "" {
+		return nil, errInvalidPath
+	}
 	folder, err := fs.getFolder(name, false)
 	if err != nil {
 		return nil, &os.PathError{"readdir", name, err}
 	}
-
-	return folder.readdir(), nil
+	return folder.readdir(), err
 }
 
 func (fs *VirtualFileSystem) ReadFile(name string) ([]byte, error) {
-	f, err := fs.getFile(name)
+	r, err := fs.getResource(name)
 	if err != nil {
 		return nil, &os.PathError{"readfile", name, err}
 	}
-
-	return f.data, nil
+	if r.isDir {
+		return nil, &os.PathError{"readfile", name, errIsDirectory}
+	}
+	clone := make([]byte, len(r.data))
+	copy(clone, r.data)
+	return clone, nil
 }
 
 func (fs *VirtualFileSystem) WriteFile(name string, data []byte, perm os.FileMode) error {
-	f, err := fs.createFile(name, false)
+	f, err := fs.createFile(name)
 	if err != nil {
 		return &os.PathError{"writefile", name, err}
 	}
-	f.data = data
+	f.data = make([]byte, len(data))
+	copy(f.data, data)
 	return nil
 }
 
 func (fs *VirtualFileSystem) ChangeDir(name string) (*VirtualFileSystem, error) {
+	if name == "" {
+		return nil, errInvalidPath
+	}
 	f, err := fs.getFolder(name, false)
 	if err != nil {
 		return nil, &os.PathError{"cd", name, err}
@@ -224,15 +199,15 @@ func (fs *VirtualFileSystem) CurrentDir() string {
 
 	// Get length of final path before allocating it
 	length := 0
-	for currentDir := fs.currentDir; currentDir != fs.root; currentDir = currentDir.parent {
-		length += len(currentDir.name) + 1
+	for current := fs.currentDir; current != fs.root; current = current.parent {
+		length += len(current.name) + 1
 	}
 
 	path := make([]byte, length)
 	end := length
-	for currentDir := fs.currentDir; currentDir != fs.root; currentDir = currentDir.parent {
-		start := end - len(currentDir.name)
-		copy(path[start:end], currentDir.name)
+	for current := fs.currentDir; current != fs.root; current = current.parent {
+		start := end - len(current.name)
+		copy(path[start:end], current.name)
 		end = start - 1
 		path[end] = '/'
 	}
@@ -240,146 +215,99 @@ func (fs *VirtualFileSystem) CurrentDir() string {
 	return string(path)
 }
 
-func (fs *VirtualFileSystem) open(name string) (*VirtualFileHandle, error) {
-	if name == "" {
-		return nil, os.ErrNotExist
+func (fs *VirtualFileSystem) createFile(name string) (*resource, error) {
+	if strings.HasSuffix(name, "/") {
+		return nil, errInvalidPath
 	}
-	if name == "/" {
-		return nil, os.ErrPermission
-	}
-	if strings.HasPrefix(name, "//") {
+	dir, filename := path.Split(path.Clean(name))
+	if filename == "" || filename == "." {
 		return nil, errInvalidPath
 	}
 
-	dir, filename := path.Split(name)
 	folder, err := fs.getFolder(dir, false)
 	if err != nil {
 		return nil, err
 	}
-	if filename == "" {
-		return folder.open(), nil
-	}
 
-	sub, file := folder.getFileOrFolder(filename)
-	if sub != nil {
-		return sub.open(), nil
-	}
-	if file != nil {
-		return file.open(os.O_RDONLY), nil
-	}
-	return nil, os.ErrNotExist
-}
-
-func (fs *VirtualFileSystem) createFile(name string, createMissing bool) (*virtualFile, error) {
-	if strings.HasSuffix(name, "/") {
-		return nil, errInvalidDestination
-	}
-	dir, filename := path.Split(path.Clean(name))
-	if filename == "" {
-		return nil, errInvalidDestination
-	}
-
-	folder, err := fs.getFolder(dir, createMissing)
-	if err != nil {
-		return nil, err
-	}
-
-	if _, isDir := folder.folders[filename]; isDir {
+	if c, exists := folder.children[filename]; exists && c.isDir {
 		return nil, errIsDirectory
 	}
 
 	file := makeFile(filename, folder, []byte{})
-	folder.files[filename] = file
+	folder.children[filename] = file
 	return file, nil
 }
 
-func (fs *VirtualFileSystem) getFolder(name string, createMissing bool) (*virtualFolder, error) {
-	var currentDir *virtualFolder
+func (fs *VirtualFileSystem) getFolder(name string, createMissing bool) (*resource, error) {
+	var current *resource
 	if strings.HasPrefix(name, "/") {
-		currentDir = fs.root
+		current = fs.root
 	} else {
-		currentDir = fs.currentDir
+		current = fs.currentDir
 	}
-	parts := strings.Split(name, "/")
+	parts := strings.Split(path.Clean(name), "/")
 	for _, part := range parts {
 		if part == "" || part == "." {
 			continue
 		}
-
 		if part == ".." {
-			if currentDir.parent != nil {
-				currentDir = currentDir.parent
+			if current.parent != nil {
+				current = current.parent
 			}
 			continue
 		}
 
-		var exists bool
-		folder, exists := currentDir.folders[part]
+		child, exists := current.children[part]
 		if exists {
-			currentDir = folder
+			if !child.isDir {
+				return nil, os.ErrNotExist
+			}
+			current = child
 			continue
-		} else if !createMissing {
+		}
+		if !createMissing {
 			return nil, os.ErrNotExist
 		}
 
-		if _, isFile := currentDir.files[part]; isFile {
-			return nil, errNotDirectory
-		}
-
-		folder = makeFolder(part, currentDir)
-		currentDir.folders[part] = folder
-		currentDir = folder
+		child = makeFolder(part, current)
+		current.children[part] = child
+		current = child
 	}
 
-	return currentDir, nil
+	return current, nil
 }
 
-func (fs *VirtualFileSystem) getFile(name string) (*virtualFile, error) {
-	dir, filename := path.Split(name)
-	if filename == "" {
-		return nil, os.ErrNotExist
+func (fs *VirtualFileSystem) getResource(name string) (*resource, error) {
+	if name == "/" {
+		return nil, os.ErrPermission
 	}
-
+	dir, filename := path.Split(path.Clean(name))
 	folder, err := fs.getFolder(dir, false)
 	if err != nil {
 		return nil, err
 	}
-
-	if f, ok := folder.files[filename]; ok {
-		return f, nil
+	if filename == "" {
+		return folder, nil
 	}
-
-	return nil, os.ErrNotExist
+	forceDir := strings.HasSuffix(name, "/")
+	child, exists := folder.children[filename]
+	if !exists || (forceDir && !child.isDir) {
+		return nil, os.ErrNotExist
+	}
+	return child, nil
 }
 
 func (fs *VirtualFileSystem) removePath(name string, recursive bool) error {
-	if name == "" {
-		return os.ErrNotExist
-	}
-
-	forceDir := strings.HasSuffix(name, "/")
-	cleanPath := path.Clean(name)
-	dir, filename := path.Split(cleanPath)
-	folder, err := fs.getFolder(dir, false)
+	r, err := fs.getResource(name)
 	if err != nil {
 		return err
 	}
-
-	if _, ok := folder.files[filename]; ok {
-		if forceDir {
-			return errNotDirectory
-		}
-		delete(folder.files, filename)
-		return nil
+	if r == fs.root {
+		return os.ErrPermission
 	}
-
-	if sub, ok := folder.folders[filename]; ok {
-		if !recursive && len(sub.files)+len(sub.folders) > 0 {
-			return errNotEmpty
-		}
-		delete(folder.folders, filename)
-		return nil
+	if !recursive && r.isDir && len(r.children) > 0 {
+		return errNotEmpty
 	}
-
-	return os.ErrNotExist
+	delete(r.parent.children, r.name)
+	return nil
 }
