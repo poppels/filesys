@@ -54,3 +54,9 @@ func (f *virtualFolder) readdir() []os.FileInfo {
 	sort.Sort(byName(infos))
 	return infos
 }
+
+func (f *virtualFolder) getFileOrFolder(name string) (*virtualFolder, *virtualFile) {
+	file, _ := f.files[name]
+	folder, _ := f.folders[name]
+	return folder, file
+}

@@ -18,6 +18,7 @@ var (
 	errIsDirectory        = errors.New("is a directory")
 	errNotDirectory       = errors.New("not a directory")
 	errInvalidDestination = errors.New("invalid destination")
+	errInvalidPath        = errors.New("invalid path")
 	errNegativeSeek       = errors.New("negative position")
 	errSeekOverflow       = errors.New("new position is too large")
 )
@@ -137,56 +138,20 @@ func (fs *VirtualFileSystem) Rename(oldPath, newPath string) error {
 }
 
 func (fs *VirtualFileSystem) Stat(name string) (os.FileInfo, error) {
-	if name == "" {
-		return nil, &os.PathError{"stat", name, os.ErrNotExist}
-	}
-
-	forceDir := strings.HasSuffix(name, "/")
-	cleanPath := path.Clean(name)
-	dir, filename := path.Split(cleanPath)
-	folder, err := fs.getFolder(dir, false)
+	f, err := fs.open(name)
 	if err != nil {
 		return nil, &os.PathError{"stat", name, err}
 	}
-
-	if file, ok := folder.files[filename]; ok {
-		if forceDir {
-			return nil, &os.PathError{"stat", name, errNotDirectory}
-		}
-		return file.stat(), nil
-	}
-
-	if sub, ok := folder.folders[filename]; ok {
-		return sub.stat(), nil
-	}
-
-	return nil, &os.PathError{"stat", name, os.ErrNotExist}
+	fi, err := f.Stat()
+	return fi, nil
 }
 
 func (fs *VirtualFileSystem) Open(name string) (filesys.File, error) {
-	if name == "" {
-		return nil, &os.PathError{"open", name, os.ErrNotExist}
-	}
-
-	forceDir := strings.HasSuffix(name, "/")
-	cleanPath := path.Clean(name)
-	dir, filename := path.Split(cleanPath)
-	folder, err := fs.getFolder(dir, false)
+	f, err := fs.open(name)
 	if err != nil {
 		return nil, &os.PathError{"open", name, err}
 	}
-
-	if !forceDir {
-		if f, ok := folder.files[filename]; ok {
-			return f.open(os.O_RDONLY), nil
-		}
-	}
-
-	if f, ok := folder.folders[filename]; ok {
-		return f.open(), nil
-	}
-
-	return nil, &os.PathError{"open", name, os.ErrNotExist}
+	return f, nil
 }
 
 func (fs *VirtualFileSystem) Create(name string) (filesys.File, error) {
@@ -273,6 +238,36 @@ func (fs *VirtualFileSystem) CurrentDir() string {
 	}
 
 	return string(path)
+}
+
+func (fs *VirtualFileSystem) open(name string) (*VirtualFileHandle, error) {
+	if name == "" {
+		return nil, os.ErrNotExist
+	}
+	if name == "/" {
+		return nil, os.ErrPermission
+	}
+	if strings.HasPrefix(name, "//") {
+		return nil, errInvalidPath
+	}
+
+	dir, filename := path.Split(name)
+	folder, err := fs.getFolder(dir, false)
+	if err != nil {
+		return nil, err
+	}
+	if filename == "" {
+		return folder.open(), nil
+	}
+
+	sub, file := folder.getFileOrFolder(filename)
+	if sub != nil {
+		return sub.open(), nil
+	}
+	if file != nil {
+		return file.open(os.O_RDONLY), nil
+	}
+	return nil, os.ErrNotExist
 }
 
 func (fs *VirtualFileSystem) createFile(name string, createMissing bool) (*virtualFile, error) {
