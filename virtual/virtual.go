@@ -147,6 +147,18 @@ func (fs *VirtualFileSystem) Chtimes(name string, atime, mtime time.Time) error 
 	return nil
 }
 
+func (fs *VirtualFileSystem) IsNotExist(err error) bool {
+	return os.IsNotExist(err)
+}
+
+func (fs *VirtualFileSystem) IsExist(err error) bool {
+	return os.IsExist(err)
+}
+
+func (fs *VirtualFileSystem) IsPermission(err error) bool {
+	return os.IsPermission(err)
+}
+
 func (fs *VirtualFileSystem) ReadDir(name string) ([]os.FileInfo, error) {
 	if name == "" {
 		return nil, errInvalidPath

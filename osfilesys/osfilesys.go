@@ -54,6 +54,18 @@ func (OsFileSystem) Chtimes(name string, atime, mtime time.Time) error {
 	return os.Chtimes(name, atime, mtime)
 }
 
+func (OsFileSystem) IsNotExist(err error) bool {
+	return os.IsNotExist(err)
+}
+
+func (OsFileSystem) IsExist(err error) bool {
+	return os.IsExist(err)
+}
+
+func (OsFileSystem) IsPermission(err error) bool {
+	return os.IsPermission(err)
+}
+
 func (OsFileSystem) ReadDir(name string) ([]os.FileInfo, error) {
 	infos, err := ioutil.ReadDir(name)
 	return infos, err

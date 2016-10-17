@@ -22,7 +22,7 @@ func TestMkdir(t *testing.T) {
 		t.Fatal(err)
 	}
 	err = fs.Mkdir("/a/b/c/d", 0777)
-	if err == nil {
+	if !fs.IsNotExist(err) {
 		t.Fatal("Directory created in non existing path")
 	}
 	err = fs.WriteFile("/a/b/c.txt", []byte{}, 0666)
@@ -107,8 +107,8 @@ func TestRename(t *testing.T) {
 		t.Fatal(err)
 	} else if fi.Name() != "e" {
 		t.Fatalf("Expected folder name 'e', got '%s'", fi.Name())
-	} else if _, err := fs.Stat("/a/b"); err == nil {
-		t.Fatal("Folder /a/b should not exist anymore")
+	} else if _, err := fs.Stat("/a/b"); !fs.IsNotExist(err) {
+		t.Fatal("Expected os.ErrNotExist for /a/b")
 	}
 
 	infos, err := fs.ReadDir("/a/d/e")
@@ -156,7 +156,7 @@ func TestRename(t *testing.T) {
 	}
 
 	// Move to non existing path
-	if err := fs.Rename("/a/k", "/a/j/o"); err == nil {
+	if err := fs.Rename("/a/k", "/a/j/o"); !fs.IsNotExist(err) {
 		t.Fatal("Expected os.ErrNotExist")
 	}
 

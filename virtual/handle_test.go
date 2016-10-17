@@ -199,7 +199,7 @@ func TestFolderReaddir(t *testing.T) {
 	}
 
 	// Read past EOF
-	if infos, err = f2.Readdir(4); err == nil {
+	if infos, err = f2.Readdir(4); err != io.EOF {
 		t.Fatal("Expected io.EOF error")
 	}
 	for _, info := range infos {

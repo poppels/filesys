@@ -16,6 +16,9 @@ type FileSystem interface {
 	Rename(oldPath, newPath string) error
 	Stat(string) (os.FileInfo, error)
 	Chtimes(name string, atime time.Time, mtime time.Time) error
+	IsNotExist(error) bool
+	IsExist(error) bool
+	IsPermission(error) bool
 	ReadDir(string) ([]os.FileInfo, error)
 	ReadFile(string) ([]byte, error)
 	WriteFile(string, []byte, os.FileMode) error
